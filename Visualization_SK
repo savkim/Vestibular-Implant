@@ -1,0 +1,120 @@
+"""
+Computer Simulations of Sensory Systems
+Exercise 3: The Vestibular System - Vestibular Implant Simulation
+
+Authors: Vitaliy Banov, Savina Kim, Ephraim Seidenberg
+Emails: vitanov@ruri.waseda.jp, savkim@ethz.ch, sephraim@ethz.ch
+    
+Date: [ ]
+
+Description:
+    The vestibular system plays a critical role in our sensory system helping us stabilize our visual understanding and maintaining 
+    balance such as our head and body postures. As a result, this system is necessary to orient ourselves in space. 
+    The following program aims to simulate a vestibular implant with the following: first we read in input data from 
+    an IMU sensor, calculate cupular displacement, understand the acceleration of an otolith hair cell then 
+    conclude with an optional visualization of the nose orientation during the movement task. 
+    
+How to run this program:
+    Import and call this programme's main function.
+
+"""
+
+# Import standard packages
+import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")  # to avoid crash when using tkinter
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Special imports
+import skinematics as skin  
+import getXsens as Xsens   
+import scipy.signal as ss
+from tkinter import *
+from tkinter import messagebox
+from tkinter import filedialog
+
+
+root = Tk()  # Tkinter window for graphical selection of input file.
+root.title('Please close this window')  # Shows an unwanted window
+root.update()  # To close window 
+path = filedialog.askopenfilename(title='Please pick your file:')
+data = Xsens.getXSensData(path, ['Acc', 'Gyr'])  # 3D-acceleration and 3D-angular-velocity
+
+# acc_t0_sensor = data[1][0]  # read in Acc_X, Axx_Y, Acc_Z @ t=0
+# print(acc_t0_sensor)
+
+# acc_t0_sensor = data[2]  # read in Acc_X, Axx_Y, Acc_Z @ t=0
+# print(acc_t0_sensor)
+
+
+def main():
+
+    # Select input file for data read in 
+    root = Tk()  # Tkinter window for graphical selection of input file.
+    root.title('Please Close Me')  # Shows us an unwanted window.
+    root.update()  # To close window after text file 
+    path = filedialog.askopenfilename(title='Please pick your file:')
+    data = Xsens.getXSensData(path, ['Acc', 'Gyr'])  # 3D-acceleration and 3D-angular-velocity
+    
+    # Find initial IMU orientation, q0 @ t=0
+    x = [1, 0, 0]
+    y = [0, 0, 1]
+    z = [0, -1, 0]
+    R_approx = np.column_stack((x, y, z))  # IMU orientation @ t=0
+    acc_t0_sensor = data[1][0]  # read in Acc_X, Acc_Y, Acc_Z @ t=0
+    
+    # Calculate IMU orientation @ t=0 (quaternion = q0, rotation matrix = R_total)
+    gravity = np.array([0,9.806,0])  # gravity vector
+    q_short = skin.vector.q_shortest_rotation(acc_t0_sensor,gravity)  # Quaternion indicating shortest rotation from one vector into another (sensor->gravity)
+    R_short = skin.quat.convert(q_short)  # Convert quaternion to corresponding rotation matrix
+    R_total = np.dot(R_approx,R_short)  # align sensor to gravity
+
+    ang_vel_re_sensor = data[2]  # Read in Gyr_X, Gyr_Y, Gyr_Z, 3D-angular-velocity w.r.t. IMU sensor's coordinate system
+    ang_vel_re_head = np.dot(R_total, ang_vel_re_sensor.T)  # 3D-angular-velocity w.r.t. space
+    
+    # Head orientation w.r.t. space while moving
+    orient_head = np.array([0, 0, 0])  # Head orientation @ t=0
+    head_orient_quat = skin.quat.calc_quat(ang_vel_re_head.T,q0=orient_head, rate=100, CStype='bf')  # orientation quaternions
+    
+    # Direction of nose while moving
+    head_orient_qvec = skin.quat.q_vector(head_orient_quat)  # extracts vector part of quaternion
+    nose = np.array([1, 0, 0])  # orientation of nose at t=0
+    
+    # Calculate shortest rotation of nose vector to head orientation
+    nose_orient = skin.vector.rotate_vector(nose, head_orient_qvec)
+    
+    # Ask if user wants to see video output of nose orientation 
+    answer = messagebox.askyesno("Question", "Do you want to see the nose orientation video output? "
+                                "\n\n (This may take some time to compute, please be patient)\n")
+
+    # Call visualise nose function 
+    visualize_nose(path = path, data=nose_orient, ans=answer)
+
+
+def visualize_nose(path, data, ans=False):
+
+    """
+    Execution of this function will generate a video to show the orientation of the nose.
+    
+    Params:
+    ans - boolean True/False answer as to whether the visualization should be performed or not.
+    path - path to which mp4 file should be saved
+    data - nose orientation 
+    """
+
+    if ans:
+        plt.show()
+        print("Please wait while the video is being created...")
+        path_nose_vid = re.sub('/Walking_02.txt$','/Nose_Orientation_Visualization.mp4', path)
+        try:
+            skin.view.orientation(data, out_file=path_nose_vid, title_text='Nose Orientation Visual', deltaT=20)
+        except AttributeError:
+            print('Done.')
+    else:
+        messagebox.showinfo("Information", "We are all done!")
+        plt.show()
+
+if __name__ == "__main__":
+
+    main()
